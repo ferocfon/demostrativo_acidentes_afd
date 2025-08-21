@@ -11,11 +11,14 @@ uploaded_file = st.sidebar.file_uploader("Envie o arquivo de acidentes", type=["
 if uploaded_file is not None:
     # Carregar conforme o tipo
     if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file, sep=";", encoding="utf-8-sig")
+        try:
+            df = pd.read_csv(uploaded_file, sep=";", encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            df = pd.read_csv(uploaded_file, sep=";", encoding="latin1")
     else:
         df = pd.read_excel(uploaded_file)
-    
-    # Ajustes
+
+    # Ajustes de data
     df['data'] = pd.to_datetime(df['data'], dayfirst=True, errors='coerce')
     df['ano'] = df['data'].dt.year
 
