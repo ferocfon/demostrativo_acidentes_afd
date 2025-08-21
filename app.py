@@ -1,29 +1,4 @@
-File "/mount/src/demostrativo_acidentes_afd/app.py", line 92, in <module>
-    fig = px.bar(
-        df_filtered["tipo_de_acidente"].value_counts().reset_index(),
-    ...<2 lines>...
-        title="Distribuição por Tipo de Acidente"
-    )
-File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_chart_types.py", line 381, in bar
-    return make_figure(
-        args=locals(),
-    ...<2 lines>...
-        layout_patch=dict(barmode=barmode),
-    )
-File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_core.py", line 2491, in make_figure
-    args = build_dataframe(args, constructor)
-File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_core.py", line 1737, in build_dataframe
-    df_output, wide_id_vars = process_args_into_dataframe(
-                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        args,
-        ^^^^^
-    ...<4 lines>...
-        native_namespace,
-        ^^^^^^^^^^^^^^^^^
-    )
-    ^
-File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_core.py", line 1338, in process_args_into_dataframe
-    raise ValueError(err_msg)import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 
@@ -59,7 +34,7 @@ def carregar_dados(caminho):
     return df
 
 # =======================
-# App Streamlit
+# Configuração do app
 # =======================
 st.set_page_config(page_title="Dashboard de Acidentes", layout="wide")
 st.title("📊 Dashboard de Acidentes - AFD")
@@ -91,7 +66,7 @@ if arquivo is not None:
     # -----------------------
     st.subheader("📌 Indicadores Principais")
     col1, col2, col3, col4 = st.columns(4)
-    
+
     total_acidentes = len(df_filtered)
     media_mensal = df_filtered.groupby(df_filtered["data"].dt.to_period("M")).size().mean() if "data" in df_filtered.columns else 0
     tipo_mais_freq = df_filtered["tipo_de_acidente"].mode()[0] if "tipo_de_acidente" in df_filtered.columns else "N/A"
@@ -105,7 +80,7 @@ if arquivo is not None:
     # -----------------------
     # Abas para gráficos
     # -----------------------
-    abas = st.tabs(["Prévia dos Dados", "Acidentes por Tipo", "Acidentes por Mês", "Análise de KM"])
+    abas = st.tabs(["Prévia dos Dados", "Acidentes por Tipo", "Acidentes por Mês", "Análise de KM", "Tendência Temporal"])
 
     # Aba 1: Prévia dos Dados
     with abas[0]:
@@ -114,12 +89,10 @@ if arquivo is not None:
     # Aba 2: Acidentes por Tipo
     with abas[1]:
         if "tipo_de_acidente" in df_filtered.columns:
-            fig = px.bar(
-                df_filtered["tipo_de_acidente"].value_counts().reset_index(),
-                x="index", y="tipo_de_acidente",
-                labels={"index":"Tipo de Acidente", "tipo_de_acidente":"Quantidade"},
-                title="Distribuição por Tipo de Acidente"
-            )
+            df_tipo = df_filtered["tipo_de_acidente"].value_counts().reset_index()
+            df_tipo.columns = ["Tipo de Acidente", "Quantidade"]
+            fig = px.bar(df_tipo, x="Tipo de Acidente", y="Quantidade",
+                         title="Distribuição por Tipo de Acidente", text="Quantidade")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Coluna 'tipo_de_acidente' não encontrada no CSV.")
@@ -128,12 +101,10 @@ if arquivo is not None:
     with abas[2]:
         if "data" in df_filtered.columns:
             df_filtered["mes"] = df_filtered["data"].dt.to_period("M").astype(str)
-            fig = px.bar(
-                df_filtered["mes"].value_counts().sort_index().reset_index(),
-                x="index", y="mes",
-                labels={"index":"Mês", "mes":"Quantidade"},
-                title="Acidentes por Mês"
-            )
+            df_mes = df_filtered["mes"].value_counts().sort_index().reset_index()
+            df_mes.columns = ["Mês", "Quantidade"]
+            fig = px.bar(df_mes, x="Mês", y="Quantidade",
+                         title="Acidentes por Mês", text="Quantidade")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Coluna 'data' não encontrada no CSV.")
@@ -141,12 +112,24 @@ if arquivo is not None:
     # Aba 4: Análise de KM
     with abas[3]:
         if "km" in df_filtered.columns:
-            fig = px.histogram(df_filtered, x="km", nbins=30, title="Distribuição de KM percorrido")
+            fig = px.histogram(df_filtered, x="km", nbins=30,
+                               title="Distribuição de KM percorrido")
             st.plotly_chart(fig, use_container_width=True)
             st.write("📌 Estatísticas de KM")
             st.write(df_filtered["km"].describe())
         else:
             st.info("Coluna 'km' não encontrada no CSV.")
+
+    # Aba 5: Tendência Temporal
+    with abas[4]:
+        if "data" in df_filtered.columns:
+            df_trend = df_filtered.groupby(df_filtered["data"].dt.to_period("M")).size().reset_index(name="Quantidade")
+            df_trend["data"] = df_trend["data"].dt.to_timestamp()
+            fig = px.line(df_trend, x="data", y="Quantidade",
+                          title="Tendência de Acidentes ao longo do Tempo", markers=True)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Coluna 'data' não encontrada no CSV.")
 
 else:
     st.info("Faça upload de um arquivo CSV para começar.")
