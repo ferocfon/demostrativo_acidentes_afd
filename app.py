@@ -2,121 +2,154 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# ==============================
-# Configuração inicial da página
-# ==============================
-st.set_page_config(page_title="Painel de Acidentes", layout="wide")
+# =======================
+# Função para carregar dados
+# =======================
+@st.cache_data
+def carregar_dados(caminho):
+    df = pd.read_csv(caminho, sep=";", encoding="latin1")
+    df.columns = df.columns.str.strip()
 
-st.title("🚦 Painel de Acidentes de Trânsito")
-st.markdown("Dashboard interativo para análise de ocorrências")
-
-# ==============================
-# Upload do arquivo
-# ==============================
-uploaded_file = st.file_uploader("📂 Faça upload do arquivo CSV", type=["csv"])
-
-if uploaded_file is not None:
-    # Tentativa de leitura com diferentes encodings
-    try:
-        df = pd.read_csv(uploaded_file, encoding="utf-8", sep=";")
-    except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(uploaded_file, encoding="latin1", sep=";")
-        except:
-            df = pd.read_csv(uploaded_file, encoding="cp1252", sep=";")
-
-    # ==============================
-    # Pré-processamento
-    # ==============================
+    # Coluna de data
     if "data" in df.columns:
-        df["data"] = pd.to_datetime(df["data"], errors="coerce")
+        df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce").dt.floor('ms')
 
-    if "horario" in df.columns:
-        df["horario"] = pd.to_datetime(df["horario"], errors="coerce").dt.time
+    # Coluna km
+    if "km" in df.columns:
+        df["km"] = df["km"].astype(str)
+        df["km"] = df["km"].str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+        df["km"] = pd.to_numeric(df["km"], errors="coerce")
 
-    if "data" in df.columns:
-        df["ano"] = df["data"].dt.year
-        df["mes"] = df["data"].dt.month
+    # Coluna tipo_de_acidente
+    if "tipo_de_acidente" in df.columns:
+        df["tipo_de_acidente"] = df["tipo_de_acidente"].astype(str).str.replace('"', '')
 
-        # Dias da semana traduzidos
-        dias_semana = {
-            "Monday": "Segunda",
-            "Tuesday": "Terça",
-            "Wednesday": "Quarta",
-            "Thursday": "Quinta",
-            "Friday": "Sexta",
-            "Saturday": "Sábado",
-            "Sunday": "Domingo"
-        }
-        df["dia_da_semana"] = df["data"].dt.day_name().map(dias_semana)
+    # Converte todas colunas de objeto para string
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].astype(str)
 
-    # ==============================
-    # Indicadores principais
-    # ==============================
-    col1, col2, col3, col4, col5 = st.columns(5)
+    return df
 
-    total_acidentes = len(df)
-    total_mortos = int(df.get("mortos", pd.Series([0])).sum())
-    total_graves = int(df.get("gravemente_feridos", pd.Series([0])).sum())
-    total_leves = int(df.get("levemente_feridos", pd.Series([0])).sum())
-    total_ilesos = int(df.get("ilesos", pd.Series([0])).sum())
+# =======================
+# Configuração do app
+# =======================
+st.set_page_config(page_title="Dashboard de Acidentes", layout="wide")
+st.title("🚨 Dashboard de Acidentes - AFD")
 
-    col1.metric("🚨 Total de Acidentes", f"{total_acidentes:,}".replace(",", "."))
-    col2.metric("☠️ Mortos", total_mortos)
-    col3.metric("🩸 Feridos Graves", total_graves)
-    col4.metric("🤕 Feridos Leves", total_leves)
-    col5.metric("🙂 Ilesos", total_ilesos)
+arquivo = st.file_uploader("📂 Carregue o arquivo CSV", type=["csv"])
 
-    st.markdown("---")
+if arquivo is not None:
+    df = carregar_dados(arquivo)
+    df_filtered = df.copy()
 
-    # ==============================
-    # Gráficos
-    # ==============================
-    aba1, aba2, aba3 = st.tabs(["📊 Por Tipo", "📅 Temporal", "📍 Localização"])
+    # =======================
+    # Sidebar com filtros
+    # =======================
+    st.sidebar.header("Filtros")
+    # Tipo de acidente
+    if "tipo_de_acidente" in df_filtered.columns:
+        tipos = df_filtered["tipo_de_acidente"].unique()
+        filtro_tipo = st.sidebar.multiselect("Tipo de acidente:", tipos, default=tipos)
+        df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo)]
 
-    with aba1:
-        if "tipo_de_acidente" in df.columns:
-            fig_tipo = px.bar(
-                df["tipo_de_acidente"].value_counts().reset_index(),
-                x="index",
-                y="tipo_de_acidente",
-                labels={"index": "Tipo de Acidente", "tipo_de_acidente": "Ocorrências"},
-                title="Tipos de Acidente Mais Comuns"
-            )
-            st.plotly_chart(fig_tipo, use_container_width=True)
+    # Período
+    if "data" in df_filtered.columns:
+        data_min = df_filtered["data"].min().date()
+        data_max = df_filtered["data"].max().date()
+        periodo = st.sidebar.date_input("Período:", [data_min, data_max])
+        df_filtered = df_filtered[(df_filtered["data"] >= pd.to_datetime(periodo[0])) &
+                                  (df_filtered["data"] <= pd.to_datetime(periodo[1]))]
 
-    with aba2:
-        if "ano" in df.columns:
-            fig_ano = px.line(
-                df.groupby("ano")["n_da_ocorrencia"].count().reset_index(),
-                x="ano",
-                y="n_da_ocorrencia",
-                markers=True,
-                labels={"ano": "Ano", "n_da_ocorrencia": "Quantidade de Acidentes"},
-                title="Evolução Anual de Acidentes"
-            )
-            st.plotly_chart(fig_ano, use_container_width=True)
+    # KM
+    if "km" in df_filtered.columns:
+        km_min = int(df_filtered["km"].min())
+        km_max = int(df_filtered["km"].max())
+        km_range = st.sidebar.slider("Faixa de KM:", km_min, km_max, (km_min, km_max))
+        df_filtered = df_filtered[(df_filtered["km"] >= km_range[0]) & (df_filtered["km"] <= km_range[1])]
 
-        if "mes" in df.columns:
-            fig_mes = px.histogram(
-                df,
-                x="mes",
-                nbins=12,
-                title="Distribuição Mensal de Acidentes",
-                labels={"mes": "Mês", "count": "Ocorrências"}
-            )
-            st.plotly_chart(fig_mes, use_container_width=True)
+    # =======================
+    # KPIs destacados
+    # =======================
+    st.subheader("📌 Indicadores Principais")
+    col1, col2, col3, col4 = st.columns(4)
 
-    with aba3:
-        if "uf" in df.columns:
-            fig_uf = px.bar(
-                df["uf"].value_counts().reset_index(),
-                x="index",
-                y="uf",
-                labels={"index": "Estado", "uf": "Ocorrências"},
-                title="Acidentes por Estado"
-            )
-            st.plotly_chart(fig_uf, use_container_width=True)
+    total_acidentes = len(df_filtered)
+    media_mensal = df_filtered.groupby(df_filtered["data"].dt.to_period("M")).size().mean() if "data" in df_filtered.columns else 0
+    tipo_mais_freq = df_filtered["tipo_de_acidente"].mode()[0] if "tipo_de_acidente" in df_filtered.columns else "N/A"
+    acidentes_por_tipo = df_filtered["tipo_de_acidente"].value_counts(normalize=True).max() if "tipo_de_acidente" in df_filtered.columns else 0
+
+    col1.metric("Total de Acidentes", f"{total_acidentes}", delta_color="inverse")
+    col2.metric("Média Mensal", f"{media_mensal:.1f}")
+    col3.metric("Tipo mais Frequente", tipo_mais_freq)
+    col4.metric("Maior % por Tipo", f"{acidentes_por_tipo*100:.1f}%")
+
+    # =======================
+    # Download do CSV filtrado
+    # =======================
+    st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
+
+    # =======================
+    # Abas para gráficos
+    # =======================
+    abas = st.tabs(["Prévia dos Dados", "Acidentes por Tipo", "Acidentes por Mês", "Análise de KM", "Tendência Temporal"])
+
+    # Aba 1: Prévia dos Dados
+    with abas[0]:
+        st.dataframe(df_filtered.head(), use_container_width=True)
+
+    # Aba 2: Acidentes por Tipo
+    with abas[1]:
+        if "tipo_de_acidente" in df_filtered.columns:
+            df_tipo = df_filtered["tipo_de_acidente"].value_counts().reset_index()
+            df_tipo.columns = ["Tipo de Acidente", "Quantidade"]
+            fig = px.bar(df_tipo, x="Tipo de Acidente", y="Quantidade",
+                         title="Distribuição por Tipo de Acidente", text="Quantidade",
+                         color="Quantidade", color_continuous_scale="Viridis")
+            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Coluna 'tipo_de_acidente' não encontrada no CSV.")
+
+    # Aba 3: Acidentes por Mês
+    with abas[2]:
+        if "data" in df_filtered.columns:
+            df_filtered = df_filtered.copy()
+            df_filtered["mes"] = df_filtered["data"].dt.to_period("M").astype(str)
+            df_mes = df_filtered["mes"].value_counts().sort_index().reset_index()
+            df_mes.columns = ["Mês", "Quantidade"]
+            fig = px.bar(df_mes, x="Mês", y="Quantidade",
+                         title="Acidentes por Mês", text="Quantidade",
+                         color="Quantidade", color_continuous_scale="Plasma")
+            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Coluna 'data' não encontrada no CSV.")
+
+    # Aba 4: Análise de KM
+    with abas[3]:
+        if "km" in df_filtered.columns:
+            fig = px.histogram(df_filtered, x="km", nbins=30,
+                               title="Distribuição de KM percorrido",
+                               color_discrete_sequence=["#636EFA"])
+            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+            st.plotly_chart(fig, use_container_width=True)
+            st.write("📌 Estatísticas de KM")
+            st.write(df_filtered["km"].describe())
+        else:
+            st.info("Coluna 'km' não encontrada no CSV.")
+
+    # Aba 5: Tendência Temporal
+    with abas[4]:
+        if "data" in df_filtered.columns:
+            df_trend = df_filtered.groupby(df_filtered["data"].dt.to_period("M")).size().reset_index(name="Quantidade")
+            df_trend["data"] = df_trend["data"].dt.to_timestamp()
+            fig = px.line(df_trend, x="data", y="Quantidade",
+                          title="Tendência de Acidentes ao longo do Tempo", markers=True,
+                          line_shape="spline")
+            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Coluna 'data' não encontrada no CSV.")
 
 else:
-    st.info("👆 Faça upload de um arquivo CSV para começar a análise.")
+    st.info("Faça upload de um arquivo CSV para começar.")
