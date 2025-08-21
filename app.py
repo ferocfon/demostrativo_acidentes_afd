@@ -5,14 +5,30 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="📊 Dashboard de Acidentes", layout="wide")
 st.title("📊 Demonstrativo de Acidentes AFD")
 
+# ===== Lista de colunas manualmente definidas =====
+colunas = [
+    "data", "horario", "n_da_ocorrencia", "tipo_de_ocorrencia", "km",
+    "trecho", "sentido", "tipo_de_acidente",
+    "automovel","bicicleta","caminhao","moto","onibus","outros",
+    "tracao_animal","transporte_de_cargas_especiais","trator_maquinas","utilitarios",
+    "ilesos","levemente_feridos","moderadamente_feridos","gravemente_feridos","mortos"
+]
+
 # ===== Função robusta de carregamento =====
 def load_csv(file):
     encodings = ["utf-8-sig", "latin1", "windows-1252"]
     for enc in encodings:
         try:
-            df = pd.read_csv(file, sep=None, engine="python", decimal=',', encoding=enc)
+            df = pd.read_csv(
+                file,
+                sep=None,
+                engine="python",
+                decimal=',',
+                encoding=enc,
+                header=None
+            )
+            df.columns = colunas
             # Limpeza: remove espaços e aspas extras
-            df.columns = df.columns.str.strip()
             for col in df.select_dtypes(include="object").columns:
                 df[col] = df[col].str.strip().str.replace('"', '')
             return df
