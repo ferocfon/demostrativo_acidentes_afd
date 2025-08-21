@@ -1,67 +1,70 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import matplotlib.pyplot as plt
 
-# ======================
-# UPLOAD DO ARQUIVO
-# ======================
-st.sidebar.title("📂 Upload do Arquivo")
-uploaded_file = st.sidebar.file_uploader("Envie o arquivo de acidentes", type=["xlsx", "csv"])
+# =======================
+# Carregamento do arquivo
+# =======================
+@st.cache_data
+def carregar_dados(caminho):
+    # Lê CSV com encoding do Windows
+    df = pd.read_csv(caminho, sep=";", encoding="latin1")
 
-if uploaded_file is not None:
-    # Carregar conforme o tipo
-    if uploaded_file.name.endswith(".csv"):
-        try:
-            df = pd.read_csv(uploaded_file, sep=";", encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            df = pd.read_csv(uploaded_file, sep=";", encoding="latin1")
-    else:
-        df = pd.read_excel(uploaded_file)
+    # Remove espaços extras nos nomes das colunas
+    df.columns = df.columns.str.strip()
 
-    # Ajustes de data
-    df['data'] = pd.to_datetime(df['data'], dayfirst=True, errors='coerce')
-    df['ano'] = df['data'].dt.year
+    # Converte coluna de data
+    if "data" in df.columns:
+        df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
 
-    # ======================
-    # KPIs
-    # ======================
-    st.title("🚛 Dashboard de Acidentes - Fernão Dias")
-    col1, col2, col3, col4 = st.columns(4)
+    # Converte km para numérico (substitui vírgula por ponto)
+    if "km" in df.columns:
+        df["km"] = (
+            df["km"].astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.extract(r"(\d+\.?\d*)")[0]
+        )
+        df["km"] = pd.to_numeric(df["km"], errors="coerce")
 
-    col1.metric("Total de Acidentes", f"{len(df)}")
-    col2.metric("Mortos", int(df['mortos'].sum()))
-    col3.metric("Feridos", int(df[['levemente_feridos','moderadamente_feridos','gravemente_feridos']].sum().sum()))
-    col4.metric("Ilesos", int(df['ilesos'].sum()))
+    # Remove aspas extras em tipo_de_acidente
+    if "tipo_de_acidente" in df.columns:
+        df["tipo_de_acidente"] = df["tipo_de_acidente"].astype(str).str.replace('"', "")
 
-    # ======================
-    # GRÁFICOS
-    # ======================
+    return df
 
-    # Evolução Anual
-    st.subheader("📊 Evolução Anual de Acidentes")
-    acidentes_ano = df.groupby("ano").size().reset_index(name="Acidentes")
-    fig1 = px.line(acidentes_ano, x="ano", y="Acidentes", markers=True, title="Evolução de Acidentes por Ano")
-    st.plotly_chart(fig1, use_container_width=True)
 
-    # Tipos de Acidente
-    st.subheader("🚦 Distribuição por Tipo de Acidente")
-    acidentes_tipo = df['tipo_de_acidente'].value_counts().reset_index()
-    acidentes_tipo.columns = ["Tipo", "Quantidade"]
-    fig2 = px.pie(acidentes_tipo, values="Quantidade", names="Tipo", hole=0.4,
-                  title="Distribuição dos Tipos de Acidente")
-    st.plotly_chart(fig2, use_container_width=True)
+# =======================
+# App Streamlit
+# =======================
+st.title("📊 Demonstrativo de Acidentes - AFD")
 
-    # Perfil das Vítimas
-    st.subheader("🧍 Perfil das Vítimas")
-    vitimas = df[['ilesos','levemente_feridos','moderadamente_feridos','gravemente_feridos','mortos']].sum().reset_index()
-    vitimas.columns = ["Condição", "Quantidade"]
-    fig3 = px.bar(vitimas, x="Condição", y="Quantidade", color="Condição", text="Quantidade",
-                  title="Perfil das Vítimas")
-    st.plotly_chart(fig3, use_container_width=True)
+# Upload do arquivo
+arquivo = st.file_uploader("Carregue o arquivo CSV", type=["csv"])
 
-    # Tabela
-    st.subheader("📑 Amostra dos Dados")
-    st.dataframe(df.head(20))
+if arquivo is not None:
+    df = carregar_dados(arquivo)
+
+    st.subheader("Prévia dos Dados")
+    st.dataframe(df.head())
+
+    # Gráfico de acidentes por tipo
+    if "tipo_de_acidente" in df.columns:
+        st.subheader("Distribuição por Tipo de Acidente")
+        fig, ax = plt.subplots()
+        df["tipo_de_acidente"].value_counts().plot(kind="bar", ax=ax)
+        st.pyplot(fig)
+
+    # Gráfico de acidentes por mês
+    if "data" in df.columns:
+        st.subheader("Acidentes por Mês")
+        df["mes"] = df["data"].dt.to_period("M")
+        fig, ax = plt.subplots()
+        df["mes"].value_counts().sort_index().plot(kind="bar", ax=ax)
+        st.pyplot(fig)
+
+    # Estatísticas descritivas
+    st.subheader("📌 Estatísticas")
+    st.write(df.describe(include="all"))
 
 else:
-    st.warning("⬅️ Faça o upload de um arquivo (.xlsx ou .csv) para visualizar os dados.")
+    st.info("Faça upload de um arquivo CSV para começar.")
