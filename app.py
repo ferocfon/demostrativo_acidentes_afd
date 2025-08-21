@@ -1,126 +1,122 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
 
-st.set_page_config(page_title="🚦 Dashboard de Acidentes", layout="wide")
+# ==============================
+# Configuração inicial da página
+# ==============================
+st.set_page_config(page_title="Painel de Acidentes", layout="wide")
 
-# -----------------------
+st.title("🚦 Painel de Acidentes de Trânsito")
+st.markdown("Dashboard interativo para análise de ocorrências")
+
+# ==============================
 # Upload do arquivo
-# -----------------------
-st.title("🚦 Dashboard de Acidentes de Trânsito")
-
-uploaded_file = st.file_uploader("📂 Carregue o arquivo CSV de acidentes", type=["csv"])
+# ==============================
+uploaded_file = st.file_uploader("📂 Faça upload do arquivo CSV", type=["csv"])
 
 if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+    # Tentativa de leitura com diferentes encodings
+    try:
+        df = pd.read_csv(uploaded_file, encoding="utf-8", sep=";")
+    except UnicodeDecodeError:
+        try:
+            df = pd.read_csv(uploaded_file, encoding="latin1", sep=";")
+        except:
+            df = pd.read_csv(uploaded_file, encoding="cp1252", sep=";")
 
-    # -----------------------
-    # Filtros
-    # -----------------------
-    st.sidebar.header("📊 Filtros")
+    # ==============================
+    # Pré-processamento
+    # ==============================
+    if "data" in df.columns:
+        df["data"] = pd.to_datetime(df["data"], errors="coerce")
 
-    # Filtro por ano
-    if "ano" in df.columns:
-        anos = sorted(df["ano"].dropna().unique())
-        ano_sel = st.sidebar.multiselect("Selecione o ano:", anos, default=anos)
-        df = df[df["ano"].isin(ano_sel)]
+    if "horario" in df.columns:
+        df["horario"] = pd.to_datetime(df["horario"], errors="coerce").dt.time
 
-    # Filtro por mês
-    if "mes" in df.columns:
-        meses = sorted(df["mes"].dropna().unique())
-        mes_sel = st.sidebar.multiselect("Selecione o mês:", meses, default=meses)
-        df = df[df["mes"].isin(mes_sel)]
+    if "data" in df.columns:
+        df["ano"] = df["data"].dt.year
+        df["mes"] = df["data"].dt.month
 
-    # -----------------------
-    # KPIs principais
-    # -----------------------
-    st.subheader("📌 Indicadores Principais")
+        # Dias da semana traduzidos
+        dias_semana = {
+            "Monday": "Segunda",
+            "Tuesday": "Terça",
+            "Wednesday": "Quarta",
+            "Thursday": "Quinta",
+            "Friday": "Sexta",
+            "Saturday": "Sábado",
+            "Sunday": "Domingo"
+        }
+        df["dia_da_semana"] = df["data"].dt.day_name().map(dias_semana)
+
+    # ==============================
+    # Indicadores principais
+    # ==============================
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     total_acidentes = len(df)
-    total_mortos = df["mortos"].sum() if "mortos" in df.columns else 0
+    total_mortos = int(df.get("mortos", pd.Series([0])).sum())
+    total_graves = int(df.get("gravemente_feridos", pd.Series([0])).sum())
+    total_leves = int(df.get("levemente_feridos", pd.Series([0])).sum())
+    total_ilesos = int(df.get("ilesos", pd.Series([0])).sum())
 
-    colunas_feridos = [c for c in df.columns if "ferid" in c.lower()]
-    total_feridos = df[colunas_feridos].sum().sum() if colunas_feridos else 0
+    col1.metric("🚨 Total de Acidentes", f"{total_acidentes:,}".replace(",", "."))
+    col2.metric("☠️ Mortos", total_mortos)
+    col3.metric("🩸 Feridos Graves", total_graves)
+    col4.metric("🤕 Feridos Leves", total_leves)
+    col5.metric("🙂 Ilesos", total_ilesos)
 
-    tipo_mais_freq = (
-        df["tipo_de_acidente"].mode()[0]
-        if "tipo_de_acidente" in df.columns and not df.empty
-        else "N/A"
-    )
+    st.markdown("---")
 
-    colunas_veiculos = [
-        "automovel","bicicleta","caminhao","moto","onibus",
-        "outros","tracao_animal","transporte_de_cargas_especiais",
-        "trator_maquinas","utilitarios"
-    ]
-    veiculo_mais_env = "N/A"
-    if all(col in df.columns for col in colunas_veiculos):
-        soma_veiculos = df[colunas_veiculos].sum().sort_values(ascending=False)
-        if not soma_veiculos.empty:
-            veiculo_mais_env = soma_veiculos.index[0]
-
-    st.markdown(f"""
-    <div style="font-size:28px; padding:15px; border-radius:10px; background:#f0f2f6; margin-bottom:10px;">
-        🚨 <b>Total de Acidentes:</b> {total_acidentes:,}
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style="font-size:28px; padding:15px; border-radius:10px; background:#ffe6e6; margin-bottom:10px;">
-        💀 <b>Total de Mortos:</b> {total_mortos:,}
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style="font-size:28px; padding:15px; border-radius:10px; background:#fff3cd; margin-bottom:10px;">
-        🤕 <b>Total de Feridos:</b> {total_feridos:,}
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style="font-size:28px; padding:15px; border-radius:10px; background:#e6f7ff; margin-bottom:10px;">
-        🚗 <b>Veículo mais Envolvido:</b> {veiculo_mais_env.capitalize()}
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style="font-size:28px; padding:15px; border-radius:10px; background:#f0f2f6; margin-bottom:10px;">
-        📌 <b>Tipo de Acidente mais Frequente:</b> {tipo_mais_freq}
-    </div>
-    """, unsafe_allow_html=True)
-
-    # -----------------------
+    # ==============================
     # Gráficos
-    # -----------------------
-    st.subheader("📊 Análises Detalhadas")
+    # ==============================
+    aba1, aba2, aba3 = st.tabs(["📊 Por Tipo", "📅 Temporal", "📍 Localização"])
 
-    col1, col2 = st.columns(2)
-
-    # Top 5 veículos mais envolvidos
-    with col1:
-        if all(col in df.columns for col in colunas_veiculos):
-            soma_veiculos = df[colunas_veiculos].sum().sort_values(ascending=False).head(5)
-            fig, ax = plt.subplots()
-            soma_veiculos.plot(kind="bar", ax=ax)
-            ax.set_title("🚗 Top 5 Veículos mais Envolvidos")
-            ax.set_ylabel("Quantidade")
-            st.pyplot(fig)
-
-    # Top 5 tipos de acidentes
-    with col2:
+    with aba1:
         if "tipo_de_acidente" in df.columns:
-            top_tipos = df["tipo_de_acidente"].value_counts().head(5)
-            fig, ax = plt.subplots()
-            top_tipos.plot(kind="bar", ax=ax, color="orange")
-            ax.set_title("📌 Top 5 Tipos de Acidente")
-            ax.set_ylabel("Quantidade")
-            st.pyplot(fig)
+            fig_tipo = px.bar(
+                df["tipo_de_acidente"].value_counts().reset_index(),
+                x="index",
+                y="tipo_de_acidente",
+                labels={"index": "Tipo de Acidente", "tipo_de_acidente": "Ocorrências"},
+                title="Tipos de Acidente Mais Comuns"
+            )
+            st.plotly_chart(fig_tipo, use_container_width=True)
 
-    # -----------------------
-    # Dados brutos
-    # -----------------------
-    st.subheader("📄 Dados Brutos")
-    st.dataframe(df)
+    with aba2:
+        if "ano" in df.columns:
+            fig_ano = px.line(
+                df.groupby("ano")["n_da_ocorrencia"].count().reset_index(),
+                x="ano",
+                y="n_da_ocorrencia",
+                markers=True,
+                labels={"ano": "Ano", "n_da_ocorrencia": "Quantidade de Acidentes"},
+                title="Evolução Anual de Acidentes"
+            )
+            st.plotly_chart(fig_ano, use_container_width=True)
+
+        if "mes" in df.columns:
+            fig_mes = px.histogram(
+                df,
+                x="mes",
+                nbins=12,
+                title="Distribuição Mensal de Acidentes",
+                labels={"mes": "Mês", "count": "Ocorrências"}
+            )
+            st.plotly_chart(fig_mes, use_container_width=True)
+
+    with aba3:
+        if "uf" in df.columns:
+            fig_uf = px.bar(
+                df["uf"].value_counts().reset_index(),
+                x="index",
+                y="uf",
+                labels={"index": "Estado", "uf": "Ocorrências"},
+                title="Acidentes por Estado"
+            )
+            st.plotly_chart(fig_uf, use_container_width=True)
 
 else:
-    st.info("⬆️ Carregue um arquivo CSV para visualizar o dashboard.")
+    st.info("👆 Faça upload de um arquivo CSV para começar a análise.")
