@@ -1,4 +1,29 @@
-import streamlit as st
+File "/mount/src/demostrativo_acidentes_afd/app.py", line 92, in <module>
+    fig = px.bar(
+        df_filtered["tipo_de_acidente"].value_counts().reset_index(),
+    ...<2 lines>...
+        title="Distribuição por Tipo de Acidente"
+    )
+File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_chart_types.py", line 381, in bar
+    return make_figure(
+        args=locals(),
+    ...<2 lines>...
+        layout_patch=dict(barmode=barmode),
+    )
+File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_core.py", line 2491, in make_figure
+    args = build_dataframe(args, constructor)
+File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_core.py", line 1737, in build_dataframe
+    df_output, wide_id_vars = process_args_into_dataframe(
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        args,
+        ^^^^^
+    ...<4 lines>...
+        native_namespace,
+        ^^^^^^^^^^^^^^^^^
+    )
+    ^
+File "/home/adminuser/venv/lib/python3.13/site-packages/plotly/express/_core.py", line 1338, in process_args_into_dataframe
+    raise ValueError(err_msg)import streamlit as st
 import pandas as pd
 import plotly.express as px
 
