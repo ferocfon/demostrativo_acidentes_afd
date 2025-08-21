@@ -5,31 +5,41 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="📊 Dashboard de Acidentes", layout="wide")
 st.title("📊 Demonstrativo de Acidentes AFD")
 
-# Upload do arquivo
+# ===== Função robusta de carregamento =====
+def load_csv(file):
+    encodings = ["utf-8-sig", "latin1", "windows-1252"]
+    for enc in encodings:
+        try:
+            df = pd.read_csv(file, sep=None, engine="python", decimal=',', encoding=enc)
+            # Limpeza: remove espaços e aspas extras
+            df.columns = df.columns.str.strip()
+            for col in df.select_dtypes(include="object").columns:
+                df[col] = df[col].str.strip().str.replace('"', '')
+            return df
+        except Exception:
+            continue
+    return None
+
+# ===== Upload do arquivo =====
 uploaded_file = st.file_uploader("📂 Envie seu arquivo CSV", type=["csv", "txt"])
 
 if uploaded_file is not None:
-    try:
-        # Carrega CSV, detecta separador, trata decimal
-        df = pd.read_csv(uploaded_file, sep=None, engine="python", decimal=',', encoding="utf-8-sig")
-
-        # Limpeza: remove espaços e aspas extras
-        df.columns = df.columns.str.strip()
-        for col in df.select_dtypes(include="object").columns:
-            df[col] = df[col].str.strip().str.replace('"', '')
-
+    df = load_csv(uploaded_file)
+    if df is None:
+        st.error("❌ Não foi possível ler o CSV. Tente salvar em UTF-8 ou Windows-1252 no Excel.")
+    else:
         st.success("✅ Arquivo carregado com sucesso!")
         st.subheader("🔍 Pré-visualização dos Dados")
         st.dataframe(df.head())
 
-        # Definição de colunas de veículos e vítimas
+        # ===== Colunas de veículos e vítimas =====
         veiculos_cols = [
             "automovel","bicicleta","caminhao","moto","onibus","outros",
             "tracao_animal","transporte_de_cargas_especiais","trator_maquinas","utilitarios"
         ]
         vitimas_cols = ["ilesos","levemente_feridos","moderadamente_feridos","gravemente_feridos","mortos"]
 
-        # Criar abas
+        # ===== Criar abas =====
         aba1, aba2, aba3, aba4 = st.tabs([
             "📌 Visão Geral",
             "📈 Indicadores por Tipo",
@@ -44,8 +54,8 @@ if uploaded_file is not None:
 
             total_acidentes = len(df)
             tipos_unicos = df["tipo_de_acidente"].nunique() if "tipo_de_acidente" in df else 0
-            total_veiculos = df[veiculos_cols].sum().sum()
-            total_vitimas = df[vitimas_cols].sum().sum()
+            total_veiculos = df[veiculos_cols].sum().sum() if all(col in df.columns for col in veiculos_cols) else 0
+            total_vitimas = df[vitimas_cols].sum().sum() if all(col in df.columns for col in vitimas_cols) else 0
 
             col1.metric("Total de Acidentes", total_acidentes)
             col2.metric("Tipos de Acidente", tipos_unicos)
@@ -97,6 +107,3 @@ if uploaded_file is not None:
                 st.pyplot(fig)
             else:
                 st.warning("⚠️ Algumas colunas de veículos não foram encontradas.")
-
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar o arquivo: {e}")
