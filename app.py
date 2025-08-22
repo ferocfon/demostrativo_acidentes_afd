@@ -3,38 +3,27 @@ import pandas as pd
 import plotly.express as px
 
 # =======================
-# Função robusta para carregar dados
+# Função para carregar dados
 # =======================
 def carregar_dados(caminho):
-    # Tenta ler com diferentes separadores
-    for sep in [";", ",", "\t"]:
-        try:
-            df = pd.read_csv(caminho, sep=sep, encoding="latin1")
-            if any(col.lower() == "data" for col in df.columns):
-                break
-        except:
-            continue
-    else:
-        raise ValueError("Não foi possível identificar o separador correto ou coluna 'data' não encontrada.")
-
-    # Normaliza nomes de colunas
+    df = pd.read_csv(caminho, sep=";", encoding="latin1")
     df.columns = df.columns.str.strip().str.lower()
 
     # Converte data
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
     else:
-        raise KeyError("Coluna 'data' não encontrada no CSV.")
+        raise KeyError("Coluna 'data' não encontrada.")
 
-    # Converte horário
+    # Converte horário (hora do dia)
     if "horario" in df.columns:
         df["horario"] = pd.to_datetime(df["horario"], errors="coerce").dt.hour
         df = df[df["horario"].notna()]
         df["horario"] = df["horario"].astype(int)
     else:
-        raise KeyError("Coluna 'horario' não encontrada no CSV.")
+        raise KeyError("Coluna 'horario' não encontrada.")
 
-    # Colunas numéricas: km
+    # Colunas numéricas
     if "km" in df.columns:
         df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
         df["km"] = pd.to_numeric(df["km"], errors="coerce")
@@ -63,9 +52,6 @@ st.title("🚨 Dashboard de Acidentes - BI")
 arquivo = st.file_uploader("📂 Carregue o arquivo CSV/TSV", type=["csv","tsv"])
 
 if arquivo is not None:
-    # =======================
-    # Carrega dados
-    # =======================
     df, veiculos, vitimas = carregar_dados(arquivo)
     df_filtered = df.copy()
 
@@ -73,31 +59,26 @@ if arquivo is not None:
     # Sidebar - filtros
     # =======================
     st.sidebar.header("Filtros")
-
     # Tipo de ocorrência
     if "tipo_de_ocorrencia" in df_filtered.columns:
         tipos_ocorrencia = df_filtered["tipo_de_ocorrencia"].unique()
         filtro_tipo_ocorrencia = st.sidebar.multiselect("Tipo de Ocorrência:", tipos_ocorrencia, default=tipos_ocorrencia)
         df_filtered = df_filtered[df_filtered["tipo_de_ocorrencia"].isin(filtro_tipo_ocorrencia)]
-
     # Tipo de acidente
     if "tipo_de_acidente" in df_filtered.columns:
         tipos_acidente = df_filtered["tipo_de_acidente"].unique()
         filtro_tipo_acidente = st.sidebar.multiselect("Tipo de Acidente:", tipos_acidente, default=tipos_acidente)
         df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo_acidente)]
-
     # Trecho
     if "trecho" in df_filtered.columns:
         trechos = df_filtered["trecho"].unique()
         filtro_trecho = st.sidebar.multiselect("Trecho:", trechos, default=trechos)
         df_filtered = df_filtered[df_filtered["trecho"].isin(filtro_trecho)]
-
     # Sentido
     if "sentido" in df_filtered.columns:
         sentidos = df_filtered["sentido"].unique()
         filtro_sentido = st.sidebar.multiselect("Sentido:", sentidos, default=sentidos)
         df_filtered = df_filtered[df_filtered["sentido"].isin(filtro_sentido)]
-
     # Faixa de horário
     if "horario" in df_filtered.columns:
         hora_min = df_filtered["horario"].min()
@@ -136,8 +117,8 @@ if arquivo is not None:
     # Aba 1: Acidentes por Tipo
     with abas[0]:
         df_tipo = df_filtered.groupby("tipo_de_acidente").size().reset_index(name="Quantidade")
-        fig = px.bar(df_tipo, x="tipo_de_acidente", y="Quantidade", title="Acidentes por Tipo", text="Quantidade",
-                     color="Quantidade", color_continuous_scale="Viridis")
+        fig = px.bar(df_tipo, x="tipo_de_acidente", y="Quantidade", text="Quantidade", 
+                     title="Acidentes por Tipo", color="Quantidade", color_continuous_scale="Viridis")
         fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -145,24 +126,23 @@ if arquivo is not None:
     with abas[1]:
         df_filtered["mes_ano"] = df_filtered["data"].dt.to_period("M").astype(str)
         df_mes = df_filtered.groupby("mes_ano").size().reset_index(name="Quantidade")
-        fig = px.bar(df_mes, x="mes_ano", y="Quantidade", title="Acidentes por Mês/Ano", text="Quantidade",
-                     color="Quantidade", color_continuous_scale="Plasma")
+        fig = px.bar(df_mes, x="mes_ano", y="Quantidade", text="Quantidade", 
+                     title="Acidentes por Mês/Ano", color="Quantidade", color_continuous_scale="Plasma")
         fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
         st.plotly_chart(fig, use_container_width=True)
 
     # Aba 3: Acidentes por Tipo de Veículo
     with abas[2]:
         df_veiculos = df_filtered[veiculos].sum().reset_index()
-        df_veiculos.columns = ["Veículo", "Quantidade"]
-        fig = px.bar(df_veiculos, x="Veículo", y="Quantidade", title="Acidentes por Tipo de Veículo", text="Quantidade",
-                     color="Quantidade", color_continuous_scale="Inferno")
+        df_veiculos.columns = ["Veículo","Quantidade"]
+        fig = px.bar(df_veiculos, x="Veículo", y="Quantidade", text="Quantidade", 
+                     title="Acidentes por Tipo de Veículo", color="Quantidade", color_continuous_scale="Inferno")
         fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
         st.plotly_chart(fig, use_container_width=True)
 
     # Aba 4: Acidentes por Horário e Sentido
     with abas[3]:
         df_hora = df_filtered.groupby(["horario","sentido"]).size().reset_index(name="Quantidade")
-        # Soma total por sentido para ordenar
         total_por_sentido = df_hora.groupby("sentido")["Quantidade"].sum().reset_index()
         total_por_sentido = total_por_sentido.sort_values("Quantidade", ascending=ascending)
         ordem_sentido = total_por_sentido["sentido"].tolist()
@@ -176,13 +156,13 @@ if arquivo is not None:
     # Aba 5: Acidentes por Trecho
     with abas[4]:
         df_trecho = df_filtered.groupby("trecho").size().reset_index(name="Quantidade")
-        fig = px.bar(df_trecho, x="trecho", y="Quantidade", title="Acidentes por Trecho da Rodovia", text="Quantidade",
-                     color="Quantidade", color_continuous_scale="Cividis")
+        fig = px.bar(df_trecho, x="trecho", y="Quantidade", text="Quantidade",
+                     title="Acidentes por Trecho da Rodovia", color="Quantidade", color_continuous_scale="Cividis")
         fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
         st.plotly_chart(fig, use_container_width=True)
 
     # =======================
-    # Lista detalhada ordenada por sentido
+    # Lista detalhada ordenada por sentido e data
     # =======================
     st.subheader("📄 Lista Detalhada de Acidentes (Ordenada por Sentido e Data)")
     df_sorted = df_filtered.copy()
