@@ -3,35 +3,35 @@ import pandas as pd
 import plotly.express as px
 
 # =======================
-# Carregar dados
+# Função para carregar dados
 # =======================
 @st.cache_data
 def carregar_dados(caminho):
     df = pd.read_csv(caminho, sep=";", encoding="latin1")
     df.columns = df.columns.str.strip()
 
-    # Coluna de data
+    # Data
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
 
-    # Coluna km (trecho da rodovia)
+    # Trecho da rodovia (km)
     if "km" in df.columns:
         df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
         df["km"] = pd.to_numeric(df["km"], errors="coerce")
 
-    # Coluna tipo_de_acidente
+    # Tipo de acidente
     if "tipo_de_acidente" in df.columns:
         df["tipo_de_acidente"] = df["tipo_de_acidente"].astype(str).str.replace('"', '')
 
-    # Coluna sentido
+    # Sentido
     if "sentido" in df.columns:
         df["sentido"] = df["sentido"].astype(str).str.upper()
 
-    # Coluna tipo_veiculo
+    # Tipo de veículo
     if "tipo_veiculo" in df.columns:
         df["tipo_veiculo"] = df["tipo_veiculo"].astype(str)
 
-    # Coluna hora
+    # Hora do acidente
     if "hora" in df.columns:
         df["hora"] = pd.to_datetime(df["hora"], format="%H:%M", errors="coerce").dt.hour
 
@@ -53,13 +53,12 @@ if arquivo is not None:
     # Sidebar com filtros
     # =======================
     st.sidebar.header("Filtros")
-    # Tipo de acidente
+
     if "tipo_de_acidente" in df_filtered.columns:
         tipos = df_filtered["tipo_de_acidente"].unique()
         filtro_tipo = st.sidebar.multiselect("Tipo de acidente:", tipos, default=tipos)
         df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo)]
 
-    # Período
     if "data" in df_filtered.columns:
         data_min = df_filtered["data"].min().date()
         data_max = df_filtered["data"].max().date()
@@ -67,14 +66,12 @@ if arquivo is not None:
         df_filtered = df_filtered[(df_filtered["data"] >= pd.to_datetime(periodo[0])) &
                                   (df_filtered["data"] <= pd.to_datetime(periodo[1]))]
 
-    # Trecho (KM)
     if "km" in df_filtered.columns:
         km_min = int(df_filtered["km"].min())
         km_max = int(df_filtered["km"].max())
         km_range = st.sidebar.slider("Trecho da rodovia (KM):", km_min, km_max, (km_min, km_max))
         df_filtered = df_filtered[(df_filtered["km"] >= km_range[0]) & (df_filtered["km"] <= km_range[1])]
 
-    # Sentido
     if "sentido" in df_filtered.columns:
         sentidos = df_filtered["sentido"].unique()
         filtro_sentido = st.sidebar.multiselect("Sentido:", sentidos, default=sentidos)
@@ -91,7 +88,7 @@ if arquivo is not None:
     tipo_mais_freq = df_filtered["tipo_de_acidente"].mode()[0] if "tipo_de_acidente" in df_filtered.columns else "N/A"
     acidentes_por_tipo = df_filtered["tipo_de_acidente"].value_counts(normalize=True).max() if "tipo_de_acidente" in df_filtered.columns else 0
 
-    col1.metric("Total de Acidentes", f"{total_acidentes}", delta_color="inverse")
+    col1.metric("Total de Acidentes", f"{total_acidentes}")
     col2.metric("Média Mensal", f"{media_mensal:.1f}")
     col3.metric("Tipo mais Frequente", tipo_mais_freq)
     col4.metric("Maior % por Tipo", f"{acidentes_por_tipo*100:.1f}%")
@@ -111,8 +108,6 @@ if arquivo is not None:
                          color="Quantidade", color_continuous_scale="Viridis")
             fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Coluna 'tipo_de_acidente' não encontrada.")
 
     # Aba 2: Acidentes por Mês
     with abas[1]:
@@ -149,13 +144,15 @@ if arquivo is not None:
             st.plotly_chart(fig, use_container_width=True)
 
     # =======================
-    # Lista detalhada abaixo dos gráficos
+    # Lista detalhada abaixo de todos os gráficos
     # =======================
-    st.subheader("📄 Lista de Acidentes Filtrados")
-    st.dataframe(df_filtered.sort_values(by="data", ascending=False), use_container_width=True)
+    st.subheader("📄 Lista Detalhada de Acidentes")
+    # Permitir ordenação: por default ordena por data decrescente
+    df_sorted = df_filtered.sort_values(by="data", ascending=False)
+    st.dataframe(df_sorted, use_container_width=True)
 
     # =======================
-    # Download do CSV filtrado
+    # Download CSV filtrado
     # =======================
     st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
 
