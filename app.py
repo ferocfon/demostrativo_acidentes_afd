@@ -7,154 +7,158 @@ import plotly.express as px
 # =======================
 @st.cache_data
 def carregar_dados(caminho):
-    df = pd.read_csv(caminho, sep=";", encoding="latin1")
+    df = pd.read_csv(caminho, sep="\t", encoding="latin1")  # Tab ou ajuste para CSV
     df.columns = df.columns.str.strip()
 
-    # Data
-    if "data" in df.columns:
-        df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
+    # Data e horário
+    df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
+    df["horario"] = pd.to_datetime(df["horario"], format="%H:%M", errors="coerce").dt.hour
 
-    # Trecho da rodovia (km)
-    if "km" in df.columns:
-        df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
-        df["km"] = pd.to_numeric(df["km"], errors="coerce")
+    # Colunas numéricas: km
+    df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
+    df["km"] = pd.to_numeric(df["km"], errors="coerce")
 
-    # Tipo de acidente
-    if "tipo_de_acidente" in df.columns:
-        df["tipo_de_acidente"] = df["tipo_de_acidente"].astype(str).str.replace('"', '')
+    # Colunas de veículos e vítimas
+    veiculos = ["automovel","bicicleta","caminhao","moto","onibus","outros",
+                "tracao_animal","transporte_de_cargas_especiais","trator_maquinas","utilitarios"]
+    for v in veiculos:
+        if v in df.columns:
+            df[v] = pd.to_numeric(df[v], errors="coerce").fillna(0)
 
-    # Sentido
-    if "sentido" in df.columns:
-        df["sentido"] = df["sentido"].astype(str).str.upper()
+    vitimas = ["ilesos","levemente_feridos","moderadamente_feridos","gravemente_feridos","mortos"]
+    for v in vitimas:
+        if v in df.columns:
+            df[v] = pd.to_numeric(df[v], errors="coerce").fillna(0)
 
-    # Tipo de veículo
-    if "tipo_veiculo" in df.columns:
-        df["tipo_veiculo"] = df["tipo_veiculo"].astype(str)
-
-    # Hora do acidente
-    if "hora" in df.columns:
-        df["hora"] = pd.to_datetime(df["hora"], format="%H:%M", errors="coerce").dt.hour
-
-    return df
+    return df, veiculos, vitimas
 
 # =======================
 # Configuração do app
 # =======================
 st.set_page_config(page_title="Dashboard de Acidentes", layout="wide")
-st.title("🚨 Dashboard de Acidentes - AFD")
+st.title("🚨 Dashboard de Acidentes - BI")
 
-arquivo = st.file_uploader("📂 Carregue o arquivo CSV", type=["csv"])
+arquivo = st.file_uploader("📂 Carregue o arquivo CSV ou TSV", type=["csv","tsv"])
 
 if arquivo is not None:
-    df = carregar_dados(arquivo)
+    df, veiculos, vitimas = carregar_dados(arquivo)
     df_filtered = df.copy()
 
     # =======================
     # Sidebar com filtros
     # =======================
     st.sidebar.header("Filtros")
+    # Tipo de ocorrência
+    if "tipo_de_ocorrencia" in df_filtered.columns:
+        tipos_ocorrencia = df_filtered["tipo_de_ocorrencia"].unique()
+        filtro_tipo_ocorrencia = st.sidebar.multiselect("Tipo de Ocorrência:", tipos_ocorrencia, default=tipos_ocorrencia)
+        df_filtered = df_filtered[df_filtered["tipo_de_ocorrencia"].isin(filtro_tipo_ocorrencia)]
 
+    # Tipo de acidente
     if "tipo_de_acidente" in df_filtered.columns:
-        tipos = df_filtered["tipo_de_acidente"].unique()
-        filtro_tipo = st.sidebar.multiselect("Tipo de acidente:", tipos, default=tipos)
-        df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo)]
+        tipos_acidente = df_filtered["tipo_de_acidente"].unique()
+        filtro_tipo_acidente = st.sidebar.multiselect("Tipo de Acidente:", tipos_acidente, default=tipos_acidente)
+        df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo_acidente)]
 
-    if "data" in df_filtered.columns:
-        data_min = df_filtered["data"].min().date()
-        data_max = df_filtered["data"].max().date()
-        periodo = st.sidebar.date_input("Período:", [data_min, data_max])
-        df_filtered = df_filtered[(df_filtered["data"] >= pd.to_datetime(periodo[0])) &
-                                  (df_filtered["data"] <= pd.to_datetime(periodo[1]))]
+    # Trecho
+    if "trecho" in df_filtered.columns:
+        trechos = df_filtered["trecho"].unique()
+        filtro_trecho = st.sidebar.multiselect("Trecho:", trechos, default=trechos)
+        df_filtered = df_filtered[df_filtered["trecho"].isin(filtro_trecho)]
 
-    if "km" in df_filtered.columns:
-        km_min = int(df_filtered["km"].min())
-        km_max = int(df_filtered["km"].max())
-        km_range = st.sidebar.slider("Trecho da rodovia (KM):", km_min, km_max, (km_min, km_max))
-        df_filtered = df_filtered[(df_filtered["km"] >= km_range[0]) & (df_filtered["km"] <= km_range[1])]
-
+    # Sentido
     if "sentido" in df_filtered.columns:
         sentidos = df_filtered["sentido"].unique()
         filtro_sentido = st.sidebar.multiselect("Sentido:", sentidos, default=sentidos)
         df_filtered = df_filtered[df_filtered["sentido"].isin(filtro_sentido)]
 
+    # Faixa de horário
+    if "horario" in df_filtered.columns:
+        hora_min = int(df_filtered["horario"].min())
+        hora_max = int(df_filtered["horario"].max())
+        hora_range = st.sidebar.slider("Faixa de Horário (h):", hora_min, hora_max, (hora_min, hora_max))
+        df_filtered = df_filtered[(df_filtered["horario"] >= hora_range[0]) & (df_filtered["horario"] <= hora_range[1])]
+
     # =======================
     # KPIs
     # =======================
-    st.subheader("📌 Indicadores Principais")
-    col1, col2, col3, col4 = st.columns(4)
-
+    st.subheader("📌 KPIs Principais")
+    col1, col2, col3, col4, col5 = st.columns(5)
     total_acidentes = len(df_filtered)
-    media_mensal = df_filtered.groupby(df_filtered["data"].dt.to_period("M")).size().mean() if "data" in df_filtered.columns else 0
+    acidentes_com_vitimas = df_filtered[vitimas[1:]].sum().sum()
+    total_mortos = df_filtered["mortos"].sum()
+    total_feridos = df_filtered[["levemente_feridos","moderadamente_feridos","gravemente_feridos"]].sum().sum()
     tipo_mais_freq = df_filtered["tipo_de_acidente"].mode()[0] if "tipo_de_acidente" in df_filtered.columns else "N/A"
-    acidentes_por_tipo = df_filtered["tipo_de_acidente"].value_counts(normalize=True).max() if "tipo_de_acidente" in df_filtered.columns else 0
 
     col1.metric("Total de Acidentes", f"{total_acidentes}")
-    col2.metric("Média Mensal", f"{media_mensal:.1f}")
-    col3.metric("Tipo mais Frequente", tipo_mais_freq)
-    col4.metric("Maior % por Tipo", f"{acidentes_por_tipo*100:.1f}%")
+    col2.metric("Acidentes com Vítimas", f"{int(acidentes_com_vitimas)}")
+    col3.metric("Total de Feridos", f"{int(total_feridos)}")
+    col4.metric("Total de Mortos", f"{int(total_mortos)}")
+    col5.metric("Tipo mais Frequente", tipo_mais_freq)
 
     # =======================
     # Abas de gráficos
     # =======================
-    abas = st.tabs(["Acidentes por Tipo", "Acidentes por Mês", "Acidentes por Tipo de Veículo", "Acidentes por Horário e Sentido"])
+    abas = st.tabs(["Acidentes por Tipo", "Acidentes por Mês", "Acidentes por Tipo de Veículo", "Acidentes por Horário e Sentido", "Acidentes por Trecho"])
 
     # Aba 1: Acidentes por Tipo
     with abas[0]:
-        if "tipo_de_acidente" in df_filtered.columns:
-            df_tipo = df_filtered["tipo_de_acidente"].value_counts().reset_index()
-            df_tipo.columns = ["Tipo de Acidente", "Quantidade"]
-            fig = px.bar(df_tipo, x="Tipo de Acidente", y="Quantidade",
-                         title="Distribuição por Tipo de Acidente", text="Quantidade",
-                         color="Quantidade", color_continuous_scale="Viridis")
-            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-            st.plotly_chart(fig, use_container_width=True)
+        df_tipo = df_filtered.groupby("tipo_de_acidente").size().reset_index(name="Quantidade")
+        fig = px.bar(df_tipo, x="tipo_de_acidente", y="Quantidade",
+                     title="Acidentes por Tipo", text="Quantidade",
+                     color="Quantidade", color_continuous_scale="Viridis")
+        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+        st.plotly_chart(fig, use_container_width=True)
 
-    # Aba 2: Acidentes por Mês
+    # Aba 2: Acidentes por Mês/Ano
     with abas[1]:
-        if "data" in df_filtered.columns:
-            df_filtered = df_filtered.copy()
-            df_filtered["mes"] = df_filtered["data"].dt.to_period("M").astype(str)
-            df_mes = df_filtered["mes"].value_counts().sort_index().reset_index()
-            df_mes.columns = ["Mês", "Quantidade"]
-            fig = px.bar(df_mes, x="Mês", y="Quantidade",
-                         title="Acidentes por Mês", text="Quantidade",
-                         color="Quantidade", color_continuous_scale="Plasma")
-            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-            st.plotly_chart(fig, use_container_width=True)
+        df_filtered["mes_ano"] = df_filtered["data"].dt.to_period("M").astype(str)
+        df_mes = df_filtered.groupby("mes_ano").size().reset_index(name="Quantidade")
+        fig = px.bar(df_mes, x="mes_ano", y="Quantidade",
+                     title="Acidentes por Mês/Ano", text="Quantidade",
+                     color="Quantidade", color_continuous_scale="Plasma")
+        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+        st.plotly_chart(fig, use_container_width=True)
 
     # Aba 3: Acidentes por Tipo de Veículo
     with abas[2]:
-        if "tipo_veiculo" in df_filtered.columns:
-            df_veiculo = df_filtered["tipo_veiculo"].value_counts().reset_index()
-            df_veiculo.columns = ["Tipo de Veículo", "Quantidade"]
-            fig = px.bar(df_veiculo, x="Tipo de Veículo", y="Quantidade",
-                         title="Acidentes por Tipo de Veículo", text="Quantidade",
-                         color="Quantidade", color_continuous_scale="Inferno")
-            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-            st.plotly_chart(fig, use_container_width=True)
+        df_veiculos = df_filtered[veiculos].sum().reset_index()
+        df_veiculos.columns = ["Veículo", "Quantidade"]
+        fig = px.bar(df_veiculos, x="Veículo", y="Quantidade",
+                     title="Acidentes por Tipo de Veículo", text="Quantidade",
+                     color="Quantidade", color_continuous_scale="Inferno")
+        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+        st.plotly_chart(fig, use_container_width=True)
 
     # Aba 4: Acidentes por Horário e Sentido
     with abas[3]:
-        if "hora" in df_filtered.columns and "sentido" in df_filtered.columns:
-            df_hora = df_filtered.groupby(["hora", "sentido"]).size().reset_index(name="Quantidade")
-            fig = px.bar(df_hora, x="hora", y="Quantidade", color="sentido",
-                         barmode="group", text="Quantidade",
-                         title="Acidentes por Horário e Sentido")
-            fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-            st.plotly_chart(fig, use_container_width=True)
+        df_hora = df_filtered.groupby(["horario","sentido"]).size().reset_index(name="Quantidade")
+        fig = px.bar(df_hora, x="horario", y="Quantidade", color="sentido",
+                     barmode="group", text="Quantidade",
+                     title="Acidentes por Horário e Sentido")
+        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Aba 5: Acidentes por Trecho
+    with abas[4]:
+        df_trecho = df_filtered.groupby(["trecho"]).size().reset_index(name="Quantidade")
+        fig = px.bar(df_trecho, x="trecho", y="Quantidade",
+                     title="Acidentes por Trecho da Rodovia", text="Quantidade",
+                     color="Quantidade", color_continuous_scale="Cividis")
+        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
+        st.plotly_chart(fig, use_container_width=True)
 
     # =======================
-    # Lista detalhada abaixo de todos os gráficos
+    # Lista detalhada
     # =======================
     st.subheader("📄 Lista Detalhada de Acidentes")
-    # Permitir ordenação: por default ordena por data decrescente
     df_sorted = df_filtered.sort_values(by="data", ascending=False)
     st.dataframe(df_sorted, use_container_width=True)
 
     # =======================
-    # Download CSV filtrado
+    # Download CSV
     # =======================
     st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
 
 else:
-    st.info("Faça upload de um arquivo CSV para começar.")
+    st.info("Faça upload de um arquivo CSV ou TSV para começar.")
