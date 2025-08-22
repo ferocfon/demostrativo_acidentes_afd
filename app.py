@@ -3,20 +3,39 @@ import pandas as pd
 import plotly.express as px
 
 # =======================
-# Função para carregar dados
+# Função robusta para carregar dados
 # =======================
-@st.cache_data
 def carregar_dados(caminho):
-    df = pd.read_csv(caminho, sep=",", encoding="latin1")  # ajuste para CSV com vírgula
-    df.columns = df.columns.str.strip()
+    # Tenta ler com diferentes separadores
+    for sep in [";", ",", "\t"]:
+        try:
+            df = pd.read_csv(caminho, sep=sep, encoding="latin1")
+            if any(col.lower() == "data" for col in df.columns):
+                break
+        except:
+            continue
+    else:
+        raise ValueError("Não foi possível identificar o separador correto ou coluna 'data' não encontrada.")
 
-    # Data e horário
-    df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
-    df["horario"] = pd.to_datetime(df["horario"], format="%H:%M", errors="coerce").dt.hour
+    # Normaliza nomes de colunas
+    df.columns = df.columns.str.strip().str.lower()
+
+    # Converte data
+    if "data" in df.columns:
+        df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
+    else:
+        raise KeyError("Coluna 'data' não encontrada no CSV.")
+
+    # Converte horário
+    if "horario" in df.columns:
+        df["horario"] = pd.to_datetime(df["horario"], format="%H:%M", errors="coerce").dt.hour
+    else:
+        raise KeyError("Coluna 'horario' não encontrada no CSV.")
 
     # Colunas numéricas: km
-    df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
-    df["km"] = pd.to_numeric(df["km"], errors="coerce")
+    if "km" in df.columns:
+        df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
+        df["km"] = pd.to_numeric(df["km"], errors="coerce")
 
     # Veículos
     veiculos = ["automovel","bicicleta","caminhao","moto","onibus","outros",
@@ -39,7 +58,7 @@ def carregar_dados(caminho):
 st.set_page_config(page_title="Dashboard de Acidentes", layout="wide")
 st.title("🚨 Dashboard de Acidentes - BI")
 
-arquivo = st.file_uploader("📂 Carregue o arquivo CSV", type=["csv"])
+arquivo = st.file_uploader("📂 Carregue o arquivo CSV/TSV", type=["csv","tsv"])
 
 if arquivo is not None:
     df, veiculos, vitimas = carregar_dados(arquivo)
@@ -165,4 +184,4 @@ if arquivo is not None:
     st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
 
 else:
-    st.info("Faça upload de um arquivo CSV para começar.")
+    st.info("Faça upload de um arquivo CSV ou TSV para começar.")
