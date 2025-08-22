@@ -105,6 +105,10 @@ if arquivo is not None:
         hora_range = st.sidebar.slider("Faixa de Horário (h):", int(hora_min), int(hora_max), (int(hora_min), int(hora_max)))
         df_filtered = df_filtered[(df_filtered["horario"] >= hora_range[0]) & (df_filtered["horario"] <= hora_range[1])]
 
+    # Ordenação por sentido
+    ordenacao_sentido = st.sidebar.radio("Ordenação por Sentido:", options=["Decrescente", "Crescente"])
+    ascending = True if ordenacao_sentido == "Crescente" else False
+
     # =======================
     # KPIs
     # =======================
@@ -158,6 +162,12 @@ if arquivo is not None:
     # Aba 4: Acidentes por Horário e Sentido
     with abas[3]:
         df_hora = df_filtered.groupby(["horario","sentido"]).size().reset_index(name="Quantidade")
+        # Soma total por sentido para ordenar
+        total_por_sentido = df_hora.groupby("sentido")["Quantidade"].sum().reset_index()
+        total_por_sentido = total_por_sentido.sort_values("Quantidade", ascending=ascending)
+        ordem_sentido = total_por_sentido["sentido"].tolist()
+        df_hora["sentido"] = pd.Categorical(df_hora["sentido"], categories=ordem_sentido, ordered=True)
+        df_hora = df_hora.sort_values(["sentido","horario"])
         fig = px.bar(df_hora, x="horario", y="Quantidade", color="sentido", barmode="group", text="Quantidade",
                      title="Acidentes por Horário e Sentido")
         fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
@@ -172,14 +182,16 @@ if arquivo is not None:
         st.plotly_chart(fig, use_container_width=True)
 
     # =======================
-    # Lista detalhada
+    # Lista detalhada ordenada por sentido
     # =======================
-    st.subheader("📄 Lista Detalhada de Acidentes")
-    df_sorted = df_filtered.sort_values(by="data", ascending=False)
+    st.subheader("📄 Lista Detalhada de Acidentes (Ordenada por Sentido e Data)")
+    df_sorted = df_filtered.copy()
+    df_sorted["sentido"] = pd.Categorical(df_sorted["sentido"], categories=ordem_sentido, ordered=True)
+    df_sorted = df_sorted.sort_values(["sentido","data"], ascending=[True, False])
     st.dataframe(df_sorted, use_container_width=True)
 
     # =======================
-    # Download CSV
+    # Download CSV filtrado
     # =======================
     st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
 
