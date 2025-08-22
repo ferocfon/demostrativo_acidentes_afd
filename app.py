@@ -1,183 +1,90 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
-# =======================
-# Função para carregar dados
-# =======================
-def carregar_dados(caminho):
-    df = pd.read_csv(caminho, sep=";", encoding="latin1")
-    df.columns = df.columns.str.strip().str.lower()
+# --- Dados ---
+df = pd.read_csv("seu_arquivo.csv")  # Ajuste para o caminho do seu CSV
 
-    # Data
-    if "data" in df.columns:
-        df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
-    else:
-        raise KeyError("Coluna 'data' não encontrada.")
+# --- Filtros ---
+st.sidebar.header("Filtros")
+horarios = st.sidebar.multiselect("Horário", df["horario"].unique(), default=df["horario"].unique())
+trechos = st.sidebar.multiselect("Trecho", df["trecho"].unique(), default=df["trecho"].unique())
+tipos_acidente = st.sidebar.multiselect("Tipo de Acidente", df["tipo_acidente"].unique(), default=df["tipo_acidente"].unique())
+tipos_ocorrencia = st.sidebar.multiselect("Tipo de Ocorrência", df["tipo_ocorrencia"].unique(), default=df["tipo_ocorrencia"].unique())
 
-    # Horário
-    if "horario" in df.columns:
-        df["horario"] = pd.to_datetime(df["horario"], errors="coerce").dt.hour
-        df = df[df["horario"].notna()]
-        df["horario"] = df["horario"].astype(int)
-    else:
-        raise KeyError("Coluna 'horario' não encontrada.")
+df_filtered = df[
+    (df["horario"].isin(horarios)) &
+    (df["trecho"].isin(trechos)) &
+    (df["tipo_acidente"].isin(tipos_acidente)) &
+    (df["tipo_ocorrencia"].isin(tipos_ocorrencia))
+]
 
-    # KM
-    if "km" in df.columns:
-        df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
-        df["km"] = pd.to_numeric(df["km"], errors="coerce")
+# --- Ordenação por sentido ---
+ordem_sentido = ["Norte", "Sul"]
+df_filtered["sentido_ord"] = pd.Categorical(df_filtered["sentido"], categories=ordem_sentido, ordered=True)
 
-    # Veículos
-    veiculos = ["automovel","bicicleta","caminhao","moto","onibus","outros",
-                "tracao_animal","transporte_de_cargas_especiais","trator_maquinas","utilitarios"]
-    for v in veiculos:
-        if v in df.columns:
-            df[v] = pd.to_numeric(df[v], errors="coerce").fillna(0)
+# --- KPIs ---
+total_acidentes = df_filtered.shape[0]
+acidentes_norte = df_filtered[df_filtered["sentido"]=="Norte"].shape[0]
+acidentes_sul = df_filtered[df_filtered["sentido"]=="Sul"].shape[0]
 
-    # Vítimas
-    vitimas = ["ilesos","levemente_feridos","moderadamente_feridos","gravemente_feridos","mortos"]
-    for v in vitimas:
-        if v in df.columns:
-            df[v] = pd.to_numeric(df[v], errors="coerce").fillna(0)
+st.title("📊 Dashboard de Acidentes - Versão Executiva")
+st.subheader("KPIs principais")
+st.metric("Total de Acidentes", total_acidentes)
+st.metric("Acidentes Norte", acidentes_norte)
+st.metric("Acidentes Sul", acidentes_sul)
 
-    return df, veiculos, vitimas
+# --- Gráfico: Acidentes por Horário e Sentido ---
+df_hora = df_filtered.groupby(["horario", "sentido_ord"]).size().reset_index(name="Quantidade")
+df_hora["sentido"] = df_hora["sentido_ord"]  # Para colorir corretamente
 
-# =======================
-# Configuração do app
-# =======================
-st.set_page_config(page_title="Dashboard de Acidentes", layout="wide")
-st.title("🚨 Dashboard de Acidentes - BI")
+# Ordena pelo valor de quantidade dentro de cada sentido
+df_hora = df_hora.sort_values(["Quantidade"], ascending=False)
 
-arquivo = st.file_uploader("📂 Carregue o arquivo CSV/TSV", type=["csv","tsv"])
+fig_hora = px.bar(
+    df_hora,
+    x="horario",
+    y="Quantidade",
+    color="sentido",
+    barmode="group",
+    text="Quantidade",
+    title="Acidentes por Horário e Sentido",
+    color_discrete_map={"Norte":"#1f77b4","Sul":"#ff7f0e"}
+)
+fig_hora.update_layout(
+    xaxis=dict(categoryorder="array", categoryarray=df_hora["horario"].tolist()),
+    title_font=dict(size=24),
+    legend_title_font=dict(size=16),
+    legend_font=dict(size=14)
+)
+st.plotly_chart(fig_hora, use_container_width=True)
 
-if arquivo is not None:
-    df, veiculos, vitimas = carregar_dados(arquivo)
-    df_filtered = df.copy()
+# --- Gráfico: Acidentes por Trecho ---
+df_trecho = df_filtered.groupby(["trecho", "sentido_ord"]).size().reset_index(name="Quantidade")
+df_trecho = df_trecho.sort_values("Quantidade", ascending=False)
 
-    # =======================
-    # Sidebar - filtros
-    # =======================
-    st.sidebar.header("Filtros")
+fig_trecho = px.bar(
+    df_trecho,
+    x="trecho",
+    y="Quantidade",
+    color="sentido",
+    barmode="group",
+    text="Quantidade",
+    title="Acidentes por Trecho",
+    color_discrete_map={"Norte":"#1f77b4","Sul":"#ff7f0e"}
+)
+st.plotly_chart(fig_trecho, use_container_width=True)
 
-    # Tipo de ocorrência
-    if "tipo_de_ocorrencia" in df_filtered.columns:
-        tipos_ocorrencia = df_filtered["tipo_de_ocorrencia"].unique()
-        filtro_tipo_ocorrencia = st.sidebar.multiselect("Tipo de Ocorrência:", tipos_ocorrencia, default=tipos_ocorrencia)
-        df_filtered = df_filtered[df_filtered["tipo_de_ocorrencia"].isin(filtro_tipo_ocorrencia)]
+# --- Tabela detalhada ---
+df_table = df_filtered.sort_values(["sentido_ord","horario"])
+st.subheader("📋 Lista detalhada de acidentes")
+st.dataframe(df_table)
 
-    # Tipo de acidente
-    if "tipo_de_acidente" in df_filtered.columns:
-        tipos_acidente = df_filtered["tipo_de_acidente"].unique()
-        filtro_tipo_acidente = st.sidebar.multiselect("Tipo de Acidente:", tipos_acidente, default=tipos_acidente)
-        df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo_acidente)]
-
-    # Trecho
-    if "trecho" in df_filtered.columns:
-        trechos = df_filtered["trecho"].unique()
-        filtro_trecho = st.sidebar.multiselect("Trecho:", trechos, default=trechos)
-        df_filtered = df_filtered[df_filtered["trecho"].isin(filtro_trecho)]
-
-    # Sentido
-    if "sentido" in df_filtered.columns:
-        sentidos = df_filtered["sentido"].unique()
-        filtro_sentido = st.sidebar.multiselect("Sentido:", sentidos, default=sentidos)
-        df_filtered = df_filtered[df_filtered["sentido"].isin(filtro_sentido)]
-
-    # Faixa de horário
-    if "horario" in df_filtered.columns:
-        hora_min = df_filtered["horario"].min()
-        hora_max = df_filtered["horario"].max()
-        hora_range = st.sidebar.slider("Faixa de Horário (h):", int(hora_min), int(hora_max), (int(hora_min), int(hora_max)))
-        df_filtered = df_filtered[(df_filtered["horario"] >= hora_range[0]) & (df_filtered["horario"] <= hora_range[1])]
-
-    # Ordenação por sentido
-    ordenacao_sentido = st.sidebar.radio("Ordenação por Sentido:", options=["Decrescente", "Crescente"])
-    ascending = True if ordenacao_sentido == "Crescente" else False
-
-    # Cria coluna auxiliar para ordenar pelo total de acidentes por sentido
-    total_por_sentido = df_filtered.groupby("sentido").size().reset_index(name="total")
-    total_por_sentido = total_por_sentido.sort_values("total", ascending=ascending)
-    ordem_sentido = total_por_sentido["sentido"].tolist()
-    df_filtered["sentido_ord"] = pd.Categorical(df_filtered["sentido"], categories=ordem_sentido, ordered=True)
-
-    # =======================
-    # KPIs
-    # =======================
-    st.subheader("📌 KPIs Principais")
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    total_acidentes = len(df_filtered)
-    acidentes_com_vitimas = df_filtered[vitimas[1:]].sum().sum()
-    total_mortos = df_filtered["mortos"].sum()
-    total_feridos = df_filtered[["levemente_feridos","moderadamente_feridos","gravemente_feridos"]].sum().sum()
-    tipo_mais_freq = df_filtered["tipo_de_acidente"].mode()[0] if "tipo_de_acidente" in df_filtered.columns else "N/A"
-
-    col1.metric("Total de Acidentes", f"{total_acidentes}")
-    col2.metric("Acidentes com Vítimas", f"{int(acidentes_com_vitimas)}")
-    col3.metric("Total de Feridos", f"{int(total_feridos)}")
-    col4.metric("Total de Mortos", f"{int(total_mortos)}")
-    col5.metric("Tipo mais Frequente", tipo_mais_freq)
-
-    # =======================
-    # Abas de gráficos
-    # =======================
-    abas = st.tabs(["Acidentes por Tipo", "Acidentes por Mês", "Acidentes por Tipo de Veículo",
-                    "Acidentes por Horário e Sentido", "Acidentes por Trecho"])
-
-    # Aba 1: Acidentes por Tipo
-    with abas[0]:
-        df_tipo = df_filtered.groupby("tipo_de_acidente").size().reset_index(name="Quantidade")
-        fig = px.bar(df_tipo, x="tipo_de_acidente", y="Quantidade", text="Quantidade", 
-                     title="Acidentes por Tipo", color="Quantidade", color_continuous_scale="Viridis")
-        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Aba 2: Acidentes por Mês/Ano
-    with abas[1]:
-        df_filtered["mes_ano"] = df_filtered["data"].dt.to_period("M").astype(str)
-        df_mes = df_filtered.groupby("mes_ano").size().reset_index(name="Quantidade")
-        fig = px.bar(df_mes, x="mes_ano", y="Quantidade", text="Quantidade", 
-                     title="Acidentes por Mês/Ano", color="Quantidade", color_continuous_scale="Plasma")
-        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Aba 3: Acidentes por Tipo de Veículo
-    with abas[2]:
-        df_veiculos = df_filtered[veiculos].sum().reset_index()
-        df_veiculos.columns = ["Veículo","Quantidade"]
-        fig = px.bar(df_veiculos, x="Veículo", y="Quantidade", text="Quantidade", 
-                     title="Acidentes por Tipo de Veículo", color="Quantidade", color_continuous_scale="Inferno")
-        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Aba 4: Acidentes por Horário e Sentido
-    with abas[3]:
-        df_hora = df_filtered.groupby(["horario","sentido_ord"]).size().reset_index(name="Quantidade")
-        fig = px.bar(df_hora, x="horario", y="Quantidade", color="sentido_ord", barmode="group", text="Quantidade",
-                     title="Acidentes por Horário e Sentido")
-        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Aba 5: Acidentes por Trecho
-    with abas[4]:
-        df_trecho = df_filtered.groupby("trecho").size().reset_index(name="Quantidade")
-        fig = px.bar(df_trecho, x="trecho", y="Quantidade", text="Quantidade",
-                     title="Acidentes por Trecho da Rodovia", color="Quantidade", color_continuous_scale="Cividis")
-        fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # =======================
-    # Lista detalhada ordenada
-    # =======================
-    st.subheader("📄 Lista Detalhada de Acidentes (Ordenada por Sentido e Data)")
-    df_sorted = df_filtered.sort_values(["sentido_ord","data"], ascending=[True, False])
-    st.dataframe(df_sorted, use_container_width=True)
-
-    # =======================
-    # Download CSV filtrado
-    # =======================
-    st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
-
-else:
-    st.info("Faça upload de um arquivo CSV ou TSV para começar.")
+# --- Download CSV filtrado ---
+csv = df_filtered.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Download CSV Filtrado",
+    data=csv,
+    file_name='acidentes_filtrados.csv',
+    mime='text/csv'
+)
