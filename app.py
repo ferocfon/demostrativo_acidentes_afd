@@ -9,13 +9,13 @@ def carregar_dados(caminho):
     df = pd.read_csv(caminho, sep=";", encoding="latin1")
     df.columns = df.columns.str.strip().str.lower()
 
-    # Converte data
+    # Data
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
     else:
         raise KeyError("Coluna 'data' não encontrada.")
 
-    # Converte horário (hora do dia)
+    # Horário
     if "horario" in df.columns:
         df["horario"] = pd.to_datetime(df["horario"], errors="coerce").dt.hour
         df = df[df["horario"].notna()]
@@ -23,7 +23,7 @@ def carregar_dados(caminho):
     else:
         raise KeyError("Coluna 'horario' não encontrada.")
 
-    # Colunas numéricas
+    # KM
     if "km" in df.columns:
         df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
         df["km"] = pd.to_numeric(df["km"], errors="coerce")
@@ -59,26 +59,31 @@ if arquivo is not None:
     # Sidebar - filtros
     # =======================
     st.sidebar.header("Filtros")
+
     # Tipo de ocorrência
     if "tipo_de_ocorrencia" in df_filtered.columns:
         tipos_ocorrencia = df_filtered["tipo_de_ocorrencia"].unique()
         filtro_tipo_ocorrencia = st.sidebar.multiselect("Tipo de Ocorrência:", tipos_ocorrencia, default=tipos_ocorrencia)
         df_filtered = df_filtered[df_filtered["tipo_de_ocorrencia"].isin(filtro_tipo_ocorrencia)]
+
     # Tipo de acidente
     if "tipo_de_acidente" in df_filtered.columns:
         tipos_acidente = df_filtered["tipo_de_acidente"].unique()
         filtro_tipo_acidente = st.sidebar.multiselect("Tipo de Acidente:", tipos_acidente, default=tipos_acidente)
         df_filtered = df_filtered[df_filtered["tipo_de_acidente"].isin(filtro_tipo_acidente)]
+
     # Trecho
     if "trecho" in df_filtered.columns:
         trechos = df_filtered["trecho"].unique()
         filtro_trecho = st.sidebar.multiselect("Trecho:", trechos, default=trechos)
         df_filtered = df_filtered[df_filtered["trecho"].isin(filtro_trecho)]
+
     # Sentido
     if "sentido" in df_filtered.columns:
         sentidos = df_filtered["sentido"].unique()
         filtro_sentido = st.sidebar.multiselect("Sentido:", sentidos, default=sentidos)
         df_filtered = df_filtered[df_filtered["sentido"].isin(filtro_sentido)]
+
     # Faixa de horário
     if "horario" in df_filtered.columns:
         hora_min = df_filtered["horario"].min()
@@ -89,6 +94,12 @@ if arquivo is not None:
     # Ordenação por sentido
     ordenacao_sentido = st.sidebar.radio("Ordenação por Sentido:", options=["Decrescente", "Crescente"])
     ascending = True if ordenacao_sentido == "Crescente" else False
+
+    # Cria coluna auxiliar para ordenar pelo total de acidentes por sentido
+    total_por_sentido = df_filtered.groupby("sentido").size().reset_index(name="total")
+    total_por_sentido = total_por_sentido.sort_values("total", ascending=ascending)
+    ordem_sentido = total_por_sentido["sentido"].tolist()
+    df_filtered["sentido_ord"] = pd.Categorical(df_filtered["sentido"], categories=ordem_sentido, ordered=True)
 
     # =======================
     # KPIs
@@ -142,13 +153,8 @@ if arquivo is not None:
 
     # Aba 4: Acidentes por Horário e Sentido
     with abas[3]:
-        df_hora = df_filtered.groupby(["horario","sentido"]).size().reset_index(name="Quantidade")
-        total_por_sentido = df_hora.groupby("sentido")["Quantidade"].sum().reset_index()
-        total_por_sentido = total_por_sentido.sort_values("Quantidade", ascending=ascending)
-        ordem_sentido = total_por_sentido["sentido"].tolist()
-        df_hora["sentido"] = pd.Categorical(df_hora["sentido"], categories=ordem_sentido, ordered=True)
-        df_hora = df_hora.sort_values(["sentido","horario"])
-        fig = px.bar(df_hora, x="horario", y="Quantidade", color="sentido", barmode="group", text="Quantidade",
+        df_hora = df_filtered.groupby(["horario","sentido_ord"]).size().reset_index(name="Quantidade")
+        fig = px.bar(df_hora, x="horario", y="Quantidade", color="sentido_ord", barmode="group", text="Quantidade",
                      title="Acidentes por Horário e Sentido")
         fig.update_layout(title_font_size=22, xaxis_title_font_size=16, yaxis_title_font_size=16)
         st.plotly_chart(fig, use_container_width=True)
@@ -162,12 +168,10 @@ if arquivo is not None:
         st.plotly_chart(fig, use_container_width=True)
 
     # =======================
-    # Lista detalhada ordenada por sentido e data
+    # Lista detalhada ordenada
     # =======================
     st.subheader("📄 Lista Detalhada de Acidentes (Ordenada por Sentido e Data)")
-    df_sorted = df_filtered.copy()
-    df_sorted["sentido"] = pd.Categorical(df_sorted["sentido"], categories=ordem_sentido, ordered=True)
-    df_sorted = df_sorted.sort_values(["sentido","data"], ascending=[True, False])
+    df_sorted = df_filtered.sort_values(["sentido_ord","data"], ascending=[True, False])
     st.dataframe(df_sorted, use_container_width=True)
 
     # =======================
