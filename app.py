@@ -7,7 +7,7 @@ import plotly.express as px
 # =======================
 @st.cache_data
 def carregar_dados(caminho):
-    df = pd.read_csv(caminho, sep="\t", encoding="latin1")  # Tab ou ajuste para CSV
+    df = pd.read_csv(caminho, sep=",", encoding="latin1")  # ajuste para CSV com vírgula
     df.columns = df.columns.str.strip()
 
     # Data e horário
@@ -18,13 +18,14 @@ def carregar_dados(caminho):
     df["km"] = df["km"].astype(str).str.replace(",", ".", regex=False)
     df["km"] = pd.to_numeric(df["km"], errors="coerce")
 
-    # Colunas de veículos e vítimas
+    # Veículos
     veiculos = ["automovel","bicicleta","caminhao","moto","onibus","outros",
                 "tracao_animal","transporte_de_cargas_especiais","trator_maquinas","utilitarios"]
     for v in veiculos:
         if v in df.columns:
             df[v] = pd.to_numeric(df[v], errors="coerce").fillna(0)
 
+    # Vítimas
     vitimas = ["ilesos","levemente_feridos","moderadamente_feridos","gravemente_feridos","mortos"]
     for v in vitimas:
         if v in df.columns:
@@ -38,7 +39,7 @@ def carregar_dados(caminho):
 st.set_page_config(page_title="Dashboard de Acidentes", layout="wide")
 st.title("🚨 Dashboard de Acidentes - BI")
 
-arquivo = st.file_uploader("📂 Carregue o arquivo CSV ou TSV", type=["csv","tsv"])
+arquivo = st.file_uploader("📂 Carregue o arquivo CSV", type=["csv"])
 
 if arquivo is not None:
     df, veiculos, vitimas = carregar_dados(arquivo)
@@ -48,6 +49,7 @@ if arquivo is not None:
     # Sidebar com filtros
     # =======================
     st.sidebar.header("Filtros")
+
     # Tipo de ocorrência
     if "tipo_de_ocorrencia" in df_filtered.columns:
         tipos_ocorrencia = df_filtered["tipo_de_ocorrencia"].unique()
@@ -84,6 +86,7 @@ if arquivo is not None:
     # =======================
     st.subheader("📌 KPIs Principais")
     col1, col2, col3, col4, col5 = st.columns(5)
+
     total_acidentes = len(df_filtered)
     acidentes_com_vitimas = df_filtered[vitimas[1:]].sum().sum()
     total_mortos = df_filtered["mortos"].sum()
@@ -99,7 +102,8 @@ if arquivo is not None:
     # =======================
     # Abas de gráficos
     # =======================
-    abas = st.tabs(["Acidentes por Tipo", "Acidentes por Mês", "Acidentes por Tipo de Veículo", "Acidentes por Horário e Sentido", "Acidentes por Trecho"])
+    abas = st.tabs(["Acidentes por Tipo", "Acidentes por Mês", "Acidentes por Tipo de Veículo",
+                    "Acidentes por Horário e Sentido", "Acidentes por Trecho"])
 
     # Aba 1: Acidentes por Tipo
     with abas[0]:
@@ -141,7 +145,7 @@ if arquivo is not None:
 
     # Aba 5: Acidentes por Trecho
     with abas[4]:
-        df_trecho = df_filtered.groupby(["trecho"]).size().reset_index(name="Quantidade")
+        df_trecho = df_filtered.groupby("trecho").size().reset_index(name="Quantidade")
         fig = px.bar(df_trecho, x="trecho", y="Quantidade",
                      title="Acidentes por Trecho da Rodovia", text="Quantidade",
                      color="Quantidade", color_continuous_scale="Cividis")
@@ -161,4 +165,4 @@ if arquivo is not None:
     st.download_button("📥 Baixar CSV filtrado", df_filtered.to_csv(index=False).encode('utf-8-sig'), "dados_filtrados.csv")
 
 else:
-    st.info("Faça upload de um arquivo CSV ou TSV para começar.")
+    st.info("Faça upload de um arquivo CSV para começar.")
