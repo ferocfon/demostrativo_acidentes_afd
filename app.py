@@ -6,14 +6,27 @@ import streamlit as st
 st.set_page_config(layout="wide", page_title="Dashboard de Acidentes")
 st.title("📊 Dashboard de Acidentes - Versão Executiva")
 
-# --- Função para carregar CSV com tratamento de codificação ---
+# --- Função para carregar CSV robusto ---
 def carregar_csv(uploaded_file) -> pd.DataFrame:
-    """Tenta carregar CSV como UTF-8, se falhar usa Latin-1."""
+    """
+    Carrega CSV tentando múltiplas codificações e separadores:
+    - UTF-8 ou Latin-1
+    - Separador vírgula ou ponto e vírgula
+    """
     try:
-        df = pd.read_csv(uploaded_file)
+        return pd.read_csv(uploaded_file)
     except UnicodeDecodeError:
-        df = pd.read_csv(uploaded_file, encoding='latin-1')
-    return df
+        try:
+            return pd.read_csv(uploaded_file, encoding='latin-1')
+        except pd.errors.ParserError:
+            # tenta ponto e vírgula com Latin-1
+            return pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
+    except pd.errors.ParserError:
+        # tenta ponto e vírgula com UTF-8
+        try:
+            return pd.read_csv(uploaded_file, sep=';', encoding='utf-8')
+        except UnicodeDecodeError:
+            return pd.read_csv(uploaded_file, sep=';', encoding='latin-1')
 
 # --- Upload do CSV ---
 uploaded_file = st.file_uploader("📥 Faça upload do CSV de acidentes", type="csv")
@@ -21,7 +34,7 @@ uploaded_file = st.file_uploader("📥 Faça upload do CSV de acidentes", type="
 if uploaded_file is not None:
     df = carregar_csv(uploaded_file)
 
-    # --- Validação mínima ---
+    # --- Validação mínima das colunas ---
     col_necessarias = ["horario", "trecho", "tipo_acidente", "tipo_ocorrencia", "sentido"]
     if not all(col in df.columns for col in col_necessarias):
         st.error(f"O CSV precisa conter as colunas: {col_necessarias}")
@@ -60,9 +73,9 @@ if uploaded_file is not None:
     col2.metric("Acidentes Norte", acidentes_norte)
     col3.metric("Acidentes Sul", acidentes_sul)
 
-    # --- Função para criar gráfico de barras ordenado ---
+    # --- Função modular para gráficos ---
     def grafico_barras(df_grouped, eixo_x, eixo_y, titulo, cor_col, cores_dict):
-        """Cria gráfico de barras Plotly ordenado pelo valor do eixo_y"""
+        """Cria gráfico de barras ordenado pelo valor do eixo_y"""
         df_grouped = df_grouped.sort_values(eixo_y, ascending=False)
         fig = px.bar(
             df_grouped,
